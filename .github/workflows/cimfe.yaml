@@ -1,4 +1,4 @@
-name: CI — MFE Product
+name: CI — MFE Product 
 
 on:
   push:
