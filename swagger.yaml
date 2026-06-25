@@ -1,0 +1,858 @@
+openapi: 3.0.3
+info:
+  title: Plus Gestão — Microsserviço de Produto
+  description: |
+    API do microsserviço de Produto do sistema Plus Gestão (vestuário plus size).
+    Este serviço é responsável pelo **cadastro e gerenciamento do catálogo de produtos**,
+    incluindo variantes (itens de grade), tamanhos e associação de mídias.
+    ### Dependências externas
+    - **MS Categorias**: fornece `categoriaId` para classificação de produtos
+    - **MS Fornecedores**: fornece `fornecedorId` para rastreabilidade
+    - **MS Mídia**: fornece `midiaId` para imagens e vídeos dos produtos
+    ### Serviços que nos consomem
+    - **MS Estoque**: usa `itemDeGradeId` para controle de quantidades
+    - **MS Consulta**: usa endpoints de busca para exibir o catálogo
+  version: 1.0.0
+  contact:
+    name: Grupo 7 — Equipe Produto
+  license:
+    name: Uso interno — ES2
+servers:
+  - url: http://localhost:3002
+    description: Servidor de desenvolvimento local
+  - url: http://plus-ms-product:3002
+    description: Servidor Docker (rede interna)
+tags:
+  - name: Produtos
+    description: CRUD e busca de produtos
+  - name: Variantes
+    description: Itens de grade (combinações de cor + tamanho)
+  - name: Tamanhos
+    description: Cadastro de tamanhos disponíveis
+paths:
+  # ============================================================
+  # PRODUTOS
+  # ============================================================
+  /products:
+    post:
+      tags: [Produtos]
+      summary: Criar um novo produto
+      description: Cria um produto no catálogo. O produto nasce como `ativo = true` por padrão.
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+            example:
+              nome: "Calça Jeans Skinny"
+              descricao: "Calça jeans skinny com elastano para maior conforto"
+              marca: "PlusWear"
+              preco: 189.90
+              categoriaId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+              fornecedorId: "f1e2d3c4-b5a6-7890-abcd-ef1234567890"
+      responses:
+        '201':
+          description: Produto criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Erro de validação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+    get:
+      tags: [Produtos]
+      summary: Listar todos os produtos
+      description: Retorna uma lista paginada de todos os produtos ativos.
+      operationId: listProducts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: ativo
+          in: query
+          description: Filtrar por status ativo/inativo. Se não informado, retorna apenas ativos.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Lista de produtos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProductResponse'
+  /products/search:
+    get:
+      tags: [Produtos]
+      summary: Buscar produtos com filtros
+      description: |
+        Busca produtos aplicando filtros combinados. Todos os filtros são opcionais
+        e podem ser combinados (AND lógico).
+        **Exemplos de uso:**
+        - `GET /products/search?cor=Azul&tamanho=G` — calças azuis tamanho G
+        - `GET /products/search?categoriaId=abc123` — produtos de uma categoria
+        - `GET /products/search?nome=jeans&fornecedorId=xyz789` — busca textual + fornecedor
+      operationId: searchProducts
+      parameters:
+        - name: nome
+          in: query
+          description: Busca pelo nome do produto
+          schema:
+            type: string
+          example: "Calça Jeans"
+        - name: categoriaId
+          in: query
+          description: Filtrar por ID da categoria (do MS Categorias)
+          schema:
+            type: string
+            format: uuid
+        - name: fornecedorId
+          in: query
+          description: Filtrar por ID do fornecedor (do MS Fornecedores)
+          schema:
+            type: string
+            format: uuid
+        - name: cor
+          in: query
+          description: Filtrar por cor da variante
+          schema:
+            type: string
+          example: "Azul"
+        - name: tamanho
+          in: query
+          description: Filtrar por nome do tamanho (ex P, M, G, GG)
+          schema:
+            type: string
+          example: "G"
+        - name: marca
+          in: query
+          description: Filtrar por marca
+          schema:
+            type: string
+        - name: precoMin
+          in: query
+          description: Preço mínimo
+          schema:
+            type: number
+            format: double
+        - name: precoMax
+          in: query
+          description: Preço máximo
+          schema:
+            type: number
+            format: double
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Resultados da busca
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProductResponse'
+  /products/{id}:
+    get:
+      tags: [Produtos]
+      summary: Buscar produto por ID
+      description: Retorna os dados completos de um produto, incluindo suas variantes e mídias associadas.
+      operationId: getProductById
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      responses:
+        '200':
+          description: Produto encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetailResponse'
+        '404':
+          description: Produto não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Produtos]
+      summary: Atualizar um produto
+      description: Atualiza os dados de um produto existente. Todos os campos enviados serão sobrescritos.
+      operationId: updateProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateRequest'
+      responses:
+        '200':
+          description: Produto atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '404':
+          description: Produto não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Erro de validação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /products/{id}/disable:
+    patch:
+      tags: [Produtos]
+      summary: Desativar um produto (soft delete)
+      description: |
+        Desativa um produto setando `ativo = false`. O produto não é removido do banco.
+        Todas as variantes do produto também são desativadas automaticamente.
+      operationId: disableProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      responses:
+        '200':
+          description: Produto desativado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Produto desativado com sucesso"
+        '404':
+          description: Produto não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # ============================================================
+  # VARIANTES (ITENS DE GRADE)
+  # ============================================================
+  /products/{productId}/variants:
+    post:
+      tags: [Variantes]
+      summary: Criar variante para um produto
+      description: |
+        Cria um item de grade (variante) associado a um produto.
+        Cada variante representa uma combinação específica de cor + tamanho.
+        **Fluxo sugerido**: Após criar o produto, o usuário seleciona os tamanhos
+        e cores desejados para gerar os itens de grade.
+      operationId: createVariant
+      parameters:
+        - $ref: '#/components/parameters/ProductIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VariantCreateRequest'
+            example:
+              tamanhoId: "d1e2f3a4-b5c6-7890-abcd-ef1234567890"
+              cor: "Azul"
+              sku: "CJS-AZL-G"
+      responses:
+        '201':
+          description: Variante criada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VariantResponse'
+        '400':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Produto não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: SKU já existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Variantes]
+      summary: Listar variantes de um produto
+      description: Retorna todas as variantes (itens de grade) associadas a um produto.
+      operationId: listVariantsByProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductIdPathParam'
+      responses:
+        '200':
+          description: Lista de variantes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VariantResponse'
+        '404':
+          description: Produto não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /variants/{id}:
+    get:
+      tags: [Variantes]
+      summary: Buscar variante por ID
+      description: Retorna os dados de uma variante específica.
+      operationId: getVariantById
+      parameters:
+        - $ref: '#/components/parameters/VariantIdParam'
+      responses:
+        '200':
+          description: Variante encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VariantResponse'
+        '404':
+          description: Variante não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Variantes]
+      summary: Atualizar uma variante
+      description: Atualiza os dados de uma variante existente.
+      operationId: updateVariant
+      parameters:
+        - $ref: '#/components/parameters/VariantIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VariantUpdateRequest'
+      responses:
+        '200':
+          description: Variante atualizada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VariantResponse'
+        '404':
+          description: Variante não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: SKU já existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /variants/{id}/disable:
+    patch:
+      tags: [Variantes]
+      summary: Desativar uma variante
+      description: Desativa uma variante setando `ativo = false`.
+      operationId: disableVariant
+      parameters:
+        - $ref: '#/components/parameters/VariantIdParam'
+      responses:
+        '200':
+          description: Variante desativada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Variante não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # ============================================================
+  # TAMANHOS
+  # ============================================================
+  /sizes:
+    post:
+      tags: [Tamanhos]
+      summary: Criar um tamanho
+      description: Cria um novo tamanho no cadastro (ex P, M, G, GG, XGG).
+      operationId: createSize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SizeCreateRequest'
+            example:
+              nome: "GG"
+              descricao: "Tamanho GG — Busto 110-118cm, Cintura 96-104cm"
+      responses:
+        '201':
+          description: Tamanho criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SizeResponse'
+        '409':
+          description: Tamanho com este nome já existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Tamanhos]
+      summary: Listar todos os tamanhos
+      description: Retorna todos os tamanhos cadastrados.
+      operationId: listSizes
+      parameters:
+        - name: ativo
+          in: query
+          description: Filtrar por status ativo/inativo
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Lista de tamanhos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SizeResponse'
+  /sizes/{id}:
+    get:
+      tags: [Tamanhos]
+      summary: Buscar tamanho por ID
+      operationId: getSizeById
+      parameters:
+        - $ref: '#/components/parameters/SizeIdParam'
+      responses:
+        '200':
+          description: Tamanho encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SizeResponse'
+        '404':
+          description: Tamanho não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Tamanhos]
+      summary: Atualizar um tamanho
+      operationId: updateSize
+      parameters:
+        - $ref: '#/components/parameters/SizeIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SizeUpdateRequest'
+      responses:
+        '200':
+          description: Tamanho atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SizeResponse'
+        '404':
+          description: Tamanho não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /sizes/{id}/disable:
+    patch:
+      tags: [Tamanhos]
+      summary: Desativar um tamanho
+      operationId: disableSize
+      parameters:
+        - $ref: '#/components/parameters/SizeIdParam'
+      responses:
+        '200':
+          description: Tamanho desativado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Tamanho não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+# ==============================================================
+# COMPONENTES
+# ==============================================================
+components:
+  # ------------------------------------------------------------
+  # PARÂMETROS REUTILIZÁVEIS
+  # ------------------------------------------------------------
+  parameters:
+    ProductIdParam:
+      name: id
+      in: path
+      required: true
+      description: ID do produto
+      schema:
+        type: string
+        format: uuid
+    ProductIdPathParam:
+      name: productId
+      in: path
+      required: true
+      description: ID do produto
+      schema:
+        type: string
+        format: uuid
+    VariantIdParam:
+      name: id
+      in: path
+      required: true
+      description: ID da variante (item de grade)
+      schema:
+        type: string
+        format: uuid
+    SizeIdParam:
+      name: id
+      in: path
+      required: true
+      description: ID do tamanho
+      schema:
+        type: string
+        format: uuid
+    PageParam:
+      name: page
+      in: query
+      description: Número da página (começa em 1)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      description: Quantidade de itens por página
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  # ------------------------------------------------------------
+  # SCHEMAS
+  # ------------------------------------------------------------
+  schemas:
+    # === PRODUTO ===
+    ProductCreateRequest:
+      type: object
+      required: [nome, preco]
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Nome do produto
+          example: "Calça Jeans Skinny"
+        descricao:
+          type: string
+          maxLength: 2000
+          description: Descrição detalhada
+          example: "Calça jeans skinny com elastano para maior conforto"
+        marca:
+          type: string
+          maxLength: 100
+          description: Marca do produto
+          example: "PlusWear"
+        preco:
+          type: number
+          format: double
+          minimum: 0
+          description: Preço do produto em reais
+          example: 189.90
+        categoriaId:
+          type: string
+          format: uuid
+          description: ID da categoria (do MS Categorias)
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        fornecedorId:
+          type: string
+          format: uuid
+          description: ID do fornecedor (do MS Fornecedores)
+          example: "f1e2d3c4-b5a6-7890-abcd-ef1234567890"
+        variantes:
+          type: array
+          description: "Lista opcional de variantes a serem criadas junto com o produto."
+          items:
+            $ref: '#/components/schemas/VariantCreateNestedRequest'
+    ProductUpdateRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "Calça Jeans Skinny Premium"
+        descricao:
+          type: string
+          maxLength: 2000
+        marca:
+          type: string
+          maxLength: 100
+        preco:
+          type: number
+          format: double
+          minimum: 0
+        categoriaId:
+          type: string
+          format: uuid
+        fornecedorId:
+          type: string
+          format: uuid
+    ProductResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "c3d4e5f6-a1b2-7890-abcd-ef1234567890"
+        nome:
+          type: string
+          example: "Calça Jeans Skinny"
+        descricao:
+          type: string
+          example: "Calça jeans skinny com elastano para maior conforto"
+        marca:
+          type: string
+          example: "PlusWear"
+        preco:
+          type: number
+          format: double
+          example: 189.90
+        ativo:
+          type: boolean
+          example: true
+        categoriaId:
+          type: string
+          format: uuid
+          nullable: true
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        fornecedorId:
+          type: string
+          format: uuid
+          nullable: true
+          example: "f1e2d3c4-b5a6-7890-abcd-ef1234567890"
+        criadoEm:
+          type: string
+          format: date-time
+          example: "2026-05-27T18:30:00Z"
+        atualizadoEm:
+          type: string
+          format: date-time
+          example: "2026-05-27T18:30:00Z"
+    ProductDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/ProductResponse'
+        - type: object
+          properties:
+            variantes:
+              type: array
+              items:
+                $ref: '#/components/schemas/VariantResponse'
+    PaginatedProductResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductDetailResponse'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalItems:
+          type: integer
+          example: 150
+        totalPages:
+          type: integer
+          example: 8
+    # === VARIANTE (ITEM DE GRADE) ===
+    VariantCreateNestedRequest:
+      type: object
+      required: [tamanhoId, cor, sku]
+      properties:
+        tamanhoId:
+          type: string
+          format: uuid
+          description: ID do tamanho
+          example: "d1e2f3a4-b5c6-7890-abcd-ef1234567890"
+        cor:
+          type: string
+          maxLength: 50
+          description: Cor da variante
+          example: "Azul"
+        sku:
+          type: string
+          maxLength: 50
+          description: Código SKU único
+          example: "CJS-AZL-G"
+    VariantCreateRequest:
+      type: object
+      required: [tamanhoId, cor, sku]
+      properties:
+        tamanhoId:
+          type: string
+          format: uuid
+          description: ID do tamanho
+          example: "d1e2f3a4-b5c6-7890-abcd-ef1234567890"
+        cor:
+          type: string
+          maxLength: 50
+          description: Cor da variante
+          example: "Azul"
+        sku:
+          type: string
+          maxLength: 50
+          description: Código SKU único
+          example: "CJS-AZL-G"
+    VariantUpdateRequest:
+      type: object
+      properties:
+        tamanhoId:
+          type: string
+          format: uuid
+        cor:
+          type: string
+          maxLength: 50
+        sku:
+          type: string
+          maxLength: 50
+    VariantResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "e5f6a1b2-c3d4-7890-abcd-ef1234567890"
+        produtoId:
+          type: string
+          format: uuid
+          example: "c3d4e5f6-a1b2-7890-abcd-ef1234567890"
+        tamanhoId:
+          type: string
+          format: uuid
+          example: "d1e2f3a4-b5c6-7890-abcd-ef1234567890"
+        tamanho:
+          $ref: '#/components/schemas/SizeResponse'
+        cor:
+          type: string
+          example: "Azul"
+        sku:
+          type: string
+          example: "CJS-AZL-G"
+        ativo:
+          type: boolean
+          example: true
+        criadoEm:
+          type: string
+          format: date-time
+        atualizadoEm:
+          type: string
+    # === TAMANHO ===
+    SizeCreateRequest:
+      type: object
+      required: [nome]
+      properties:
+        nome:
+          type: string
+          maxLength: 10
+          description: "Nome do tamanho (ex: P, M, G, GG, XGG)"
+          example: "GG"
+        descricao:
+          type: string
+          maxLength: 500
+          description: Descrição com medidas opcionais
+          example: "Tamanho GG — Busto 110-118cm, Cintura 96-104cm"
+    SizeUpdateRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          maxLength: 10
+        descricao:
+          type: string
+          maxLength: 500
+    SizeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "d1e2f3a4-b5c6-7890-abcd-ef1234567890"
+        nome:
+          type: string
+          example: "GG"
+        descricao:
+          type: string
+          example: "Tamanho GG — Busto 110-118cm, Cintura 96-104cm"
+        ativo:
+          type: boolean
+          example: true
+    # === RESPOSTAS GENÉRICAS ===
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operação realizada com sucesso"
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Recurso não encontrado"
+        statusCode:
+          type: integer
+          example: 404
+    ValidationErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Erro de validação"
+        statusCode:
+          type: integer
+          example: 422
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: "nome"
+              message:
+                type: string
+                example: "O campo nome é obrigatório"
