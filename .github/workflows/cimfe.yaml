@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plus-mfe-product
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +29,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: plus-mfe-product
     steps:
       - uses: actions/checkout@v4
 

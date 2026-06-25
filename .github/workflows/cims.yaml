@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plus-ms-product
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +41,7 @@ jobs:
 
       - uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./plus-ms-product
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/plus-ms-product:latest
