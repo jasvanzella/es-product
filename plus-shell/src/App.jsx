@@ -1,11 +1,13 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-// Import lazy do microfrontend remoto
 const LoginPage = lazy(() => import("mfe_auth/LoginPage"));
 const RegisterPage = lazy(() => import("mfe_auth/RegisterPage"));
 const SuccessPage = lazy(() => import("mfe_auth/SuccessPage"));
 const DashboardPage = lazy(() => import("mfe_auth/DashboardPage"));
+
+const ProductEditAdminPage = lazy(() => import("mfe_product/ProductEditAdminPage"));
+const ProductListAdminPage = lazy(() => import("mfe_product/ProductListAdminPage"));
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem("token");
@@ -19,26 +21,10 @@ export default function App() {
         <Routes>
           <Route
             path="/login"
-            element={
-              <LoginPage
-                onLogin={() => (window.location.href = "/success")}
-              />
-            }
+            element={<LoginPage onLogin={() => (window.location.href = "/success")} />}
           />
-          <Route 
-            path="/success" 
-            element={
-              <SuccessPage 
-              />
-            } 
-          />
-          <Route
-            path="/register"
-            element={
-              <RegisterPage 
-              />
-            }
-          />
+          <Route path="/success" element={<SuccessPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route
             path="/"
             element={
@@ -47,7 +33,22 @@ export default function App() {
               </PrivateRoute>
             }
           />
-          {/* rotas nao encontradas  */}
+          <Route
+            path="/products"
+            element={
+              <PrivateRoute>
+                <ProductEditAdminPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/products/new"
+            element={
+              <PrivateRoute>
+                <ProductListAdminPage />
+              </PrivateRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

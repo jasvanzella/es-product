@@ -17,6 +17,11 @@ class Settings:
     # monta a URL de conexão com o banco de dados usando as variáveis de ambiente
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        db_url = os.getenv("DATABASE_URL")
+        if db_url:
+            return db_url
+        if os.getenv("DB_HOST") and os.getenv("DB_HOST") != "localhost":
+            return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return "sqlite:///./auth.db"
 
 settings = Settings()

@@ -46,13 +46,8 @@ services:
     ports:
       - "${MS_AUTH_PORT:-3001}:3001"
     environment:
-      - NODE_ENV=development
       - PORT=3001
-      - JWT_SECRET=${JWT_SECRET}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - AWS_ENDPOINT=http://ministack:4566
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
@@ -77,7 +72,7 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
     depends_on:
       infra-provisioner:
         condition: service_completed_successfully
@@ -87,18 +82,28 @@ services:
     build:
       context: ../plus-mfe-auth
       dockerfile: Dockerfile
+      args:
+        - VITE_MS_AUTH_URL=http://localhost:${MS_AUTH_PORT:-3001}
     container_name: plus-mfe-auth
     ports:
       - "${MFE_AUTH_PORT:-4001}:4001"
-    environment:
-      - VITE_MS_AUTH_URL=http://localhost:3001
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - AWS_ENDPOINT=http://ministack:4566
     depends_on:
       infra-provisioner:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  plus-mfe-product:
+    build:
+      context: ../plus-mfe-product
+      dockerfile: Dockerfile
+      args:
+        - VITE_PRODUCT_API_URL=http://localhost:${MS_PRODUCT_PORT:-3002}
+    container_name: plus-mfe-product
+    ports:
+      - "${MFE_PRODUCT_PORT:-4002}:4002"
+    depends_on:
+      plus-ms-product:
+        condition: service_started
     restart: unless-stopped
 
   plus-shell:
@@ -106,19 +111,15 @@ services:
       context: ../plus-shell
       dockerfile: Dockerfile
       args:
-        - MFE_AUTH_URL=http://localhost:4001/assets/remoteEntry.js
+        - MFE_AUTH_URL=http://localhost:${MFE_AUTH_PORT:-4001}/assets/remoteEntry.js
+        - MFE_PRODUCT_URL=http://localhost:${MFE_PRODUCT_PORT:-4002}/assets/remoteEntry.js
     container_name: plus-shell
     ports:
       - "${SHELL_PORT:-3000}:3000"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - AWS_ENDPOINT=http://ministack:4566
     depends_on:
-      infra-provisioner:
-        condition: service_completed_successfully
       plus-mfe-auth:
+        condition: service_started
+      plus-mfe-product:
         condition: service_started
     restart: unless-stopped
 
