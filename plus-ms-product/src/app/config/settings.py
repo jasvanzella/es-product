@@ -8,27 +8,13 @@ class Settings:
     DB_PORT: str = os.getenv("DB_PORT", "5432")
     DB_USER: str = os.getenv("DB_USER", "plus")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "plus_secret")
-    DB_NAME: str = os.getenv("DB_NAME", "plus_product") # maps to database name
+    DB_NAME: str = os.getenv("DB_NAME", "plus_product")
     PORT: int = int(os.getenv("PORT", 3002))
 
-    # Segredo compartilhado com o MS Auth para validar a assinatura dos JWTs.
-    # Precisa ser IDÊNTICO ao JWT_SECRET configurado no plus-ms-auth, senão
-    # nenhum token emitido por ele será aceito aqui.
     JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret")
-
-    # URL base do MS de Categorias, usada para validar categoriaId antes de
-    # criar/atualizar um produto. Se não for configurada, a validação
-    # cross-service é simplesmente pulada (fail-open) — ver ADR.md, seção de
-    # trade-offs, para a justificativa dessa escolha.
-    CATEGORIA_SERVICE_URL: str = os.getenv("CATEGORIA_SERVICE_URL", "http://localhost:3004")
-    CATEGORIA_SERVICE_TIMEOUT_SECONDS: float = float(os.getenv("CATEGORIA_SERVICE_TIMEOUT_SECONDS", "3"))
-    SUPPLIER_SERVICE_URL: str = os.getenv("SUPPLIER_SERVICE_URL", "http://localhost:3003")
-    SUPPLIER_SERVICE_TIMEOUT_SECONDS: float = float(os.getenv("SUPPLIER_SERVICE_TIMEOUT_SECONDS", "3"))
 
     @property
     def DATABASE_URL(self) -> str:
-        # Usa SQLite por padrão no local para poder testar o Swagger imediatamente sem Docker.
-        # Se for explicitamente configurado no .env, usa PostgreSQL.
         db_url = os.getenv("DATABASE_URL")
         if db_url:
             return db_url

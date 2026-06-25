@@ -10,8 +10,8 @@ def test_create_product_success(client):
             "descricao": "Vestido leve de verão",
             "marca": "Plus Co",
             "preco": 149.90,
-            "categoriaId": "categoria-1",
-            "fornecedorId": "fornecedor-1",
+            "categoriaId": "1",
+            "fornecedorId": "f1e2d3c4-b5a6-7890-abcd-ef1234567890",
         },
     )
 
@@ -20,8 +20,8 @@ def test_create_product_success(client):
     assert body["nome"] == "Vestido Floral"
     assert body["preco"] == 149.90
     assert body["ativo"] is True
-    assert body["categoriaId"] == "categoria-1"
-    assert body["fornecedorId"] == "fornecedor-1"
+    assert body["categoriaId"] == "1"
+    assert body["fornecedorId"] == "f1e2d3c4-b5a6-7890-abcd-ef1234567890"
     assert "id" in body
     assert "criadoEm" in body
 

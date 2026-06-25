@@ -1,19 +1,21 @@
+import type { ProductUpdateRequest, ColorVariant, SizeVariant } from "../../components/EditProductModal";
+import type { ProductCreateRequest } from "../../components/CreateProductModal";
+
 const API_BASE_URL = import.meta.env.VITE_PRODUCT_API_URL || "http://localhost:3002";
 
-function getAuthHeaders() {
+function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Dados mockados (formato autorizado pelo professor). Os IDs aqui devem
-// ser os MESMOS usados em app/clients/mock_data.py no back, senão a
-// validação cross-service recusa.
 export const MOCK_CATEGORIES = [
-  { id: "1", nome: "Calças" },
-  { id: "2", nome: "Vestidos" },
-  { id: "3", nome: "Blusas" },
-  { id: "4", nome: "Saias" },
-  { id: "5", nome: "Jaquetas" },
+  { id: "1", nome: "Camisetas" },
+  { id: "2", nome: "Calças" },
+  { id: "3", nome: "Vestidos" },
+  { id: "4", nome: "Acessórios" },
+  { id: "5", nome: "Blusas" },
+  { id: "6", nome: "Saias" },
+  { id: "7", nome: "Jaquetas" },
 ];
 
 export const MOCK_SUPPLIERS = [
@@ -23,7 +25,7 @@ export const MOCK_SUPPLIERS = [
 ];
 
 export function useProductForm() {
-  async function createProduct(payload: any) {
+  async function createProduct(payload: ProductCreateRequest) {
     const response = await fetch(`${API_BASE_URL}/products`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -35,25 +37,51 @@ export function useProductForm() {
     }
   }
 
-  async function loadProduct(id: string) {
+  async function loadProduct(id: string): Promise<ProductUpdateRequest> {
     const response = await fetch(`${API_BASE_URL}/products/${id}`, {
       headers: getAuthHeaders(),
     });
     if (!response.ok) throw new Error("Erro ao buscar produto");
     const p = await response.json();
+
+    const coresMap = new Map<string, ColorVariant>();
+    const gradesMap = new Map<string, SizeVariant>();
+
+    if (Array.isArray(p.variantes)) {
+      for (const v of p.variantes) {
+        if (v.cor && !coresMap.has(v.cor)) {
+          coresMap.set(v.cor, {
+            id: crypto.randomUUID(),
+            nome: v.cor,
+            hex: "#000000",
+          });
+        }
+        if (v.tamanho && !gradesMap.has(v.tamanho.nome)) {
+          gradesMap.set(v.tamanho.nome, {
+            id: v.tamanho.id,
+            nome: v.tamanho.nome,
+            estoque: 0,
+          });
+        }
+      }
+    }
+
     return {
       id: p.id,
       nome: p.nome,
-      descricao: p.descricao,
-      marca: p.marca,
+      descricao: p.descricao ?? "",
+      marca: p.marca ?? "",
       preco: p.preco,
-      categoriaId: p.categoriaId,
-      fornecedorId: p.fornecedorId,
+      categoriaId: p.categoriaId ?? "",
+      fornecedorId: p.fornecedorId ?? "",
+      ativo: p.ativo ?? true,
+      cores: Array.from(coresMap.values()),
+      grades: Array.from(gradesMap.values()),
     };
   }
 
-  async function updateProduct(payload: any) {
-    const { id, ...body } = payload;
+  async function updateProduct(payload: ProductUpdateRequest) {
+    const { id, cores, grades, ...body } = payload;
     const response = await fetch(`${API_BASE_URL}/products/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },

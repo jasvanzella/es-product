@@ -3,26 +3,23 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environment
 venv/
 .venv/
-*.db
 
-# Node
-node_modules/
-dist/
+# SQLite (dev local)
+*.db
 
 # Environment
 .env
 .env.*
 !.env.example
 
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-.terraform.lock.hcl
-
-# Testing
+# Pytest
 .pytest_cache/
 htmlcov/
 .coverage
@@ -40,7 +37,3 @@ Thumbs.db
 # AI logs
 .ai_log/
 ai_logs/
-
-# Logs
-*.log
-npm-debug.log*

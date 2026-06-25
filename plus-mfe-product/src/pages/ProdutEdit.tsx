@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Typography, Snackbar, Alert } from "@mui/material";
 
 import { ProductGrid } from "../components/ProductGrid";
 import { ProductCard } from "../components/ProductCard";
@@ -27,13 +27,16 @@ export function ProductEditAdminPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-const handleCreate = async (payload: ProductCreateRequest) => {
+  const handleCreate = async (payload: ProductCreateRequest) => {
     setCreating(true);
     try {
       await createProduct(payload);
       reload();
       setCreateOpen(false);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Erro ao criar produto");
     } finally {
       setCreating(false);
     }
@@ -45,6 +48,9 @@ const handleCreate = async (payload: ProductCreateRequest) => {
     try {
       const product = await loadProduct(id);
       setEditingProduct(product);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Erro ao carregar produto");
+      setEditOpen(false);
     } finally {
       setLoadingEdit(false);
     }
@@ -57,16 +63,22 @@ const handleCreate = async (payload: ProductCreateRequest) => {
       reload();
       setEditOpen(false);
       setEditingProduct(null);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Erro ao atualizar produto");
     } finally {
       setSavingEdit(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    await disableProduct(id);
-    reload();
-    setEditOpen(false);
-    setEditingProduct(null);
+    try {
+      await disableProduct(id);
+      reload();
+      setEditOpen(false);
+      setEditingProduct(null);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Erro ao desativar produto");
+    }
   };
 
   return (
@@ -114,6 +126,17 @@ const handleCreate = async (payload: ProductCreateRequest) => {
         suppliers={suppliers}
         submitting={savingEdit}
       />
+
+      <Snackbar
+        open={!!errorMsg}
+        autoHideDuration={6000}
+        onClose={() => setErrorMsg("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="error" onClose={() => setErrorMsg("")} sx={{ width: "100%" }}>
+          {errorMsg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

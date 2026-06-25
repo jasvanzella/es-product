@@ -1,11 +1,6 @@
 """
 Testes unitários focados na integração com o MS Auth (JWT) e RBAC, além da
-validação cross-service do categoriaId contra o MS de Categorias.
-
-Diferente dos demais arquivos em tests/unit, aqui usamos o TestClient SEM
-o override padrão de `get_current_user` (que os outros arquivos usam via
-a fixture `client` em conftest.py) sempre que o objetivo é validar o
-comportamento real do dependency (HTTPBearer + decodificação do JWT).
+validação de categoriaId contra dados mockados.
 """
 import os
 
@@ -25,19 +20,12 @@ from tests.unit.conftest import (
 
 
 def _make_token(role: str = "admin", **extra_claims) -> str:
-    """Gera um JWT real, assinado com o mesmo segredo usado pelo MS de
-    Produto (settings.JWT_SECRET), simulando um token emitido pelo MS Auth.
-    """
     payload = {"sub": "user@plus.com", "user_id": "user-1", "role": role, **extra_claims}
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
 
 
 @pytest.fixture()
 def raw_client():
-    """Cliente de teste SEM nenhum override de autenticação — exercita o
-    `get_current_user`/`require_admin` reais (HTTPBearer + verify_token),
-    só com o banco substituído pelo de testes.
-    """
     Base.metadata.create_all(bind=engine)
     session = TestingSessionLocal()
 
@@ -73,8 +61,7 @@ def test_request_with_invalid_token_returns_401(raw_client):
 
 
 # ----------------------------------------------------------------------
-# 2. RBAC: leitura é permitida a qualquer papel autenticado; escrita é
-#    restrita a admin.
+# 2. RBAC
 # ----------------------------------------------------------------------
 def test_vendedor_can_read_products(raw_client):
     token = _make_token(role="vendedor")
@@ -103,9 +90,6 @@ def test_admin_can_create_product(raw_client):
 
 
 def test_user_without_role_claim_cannot_create_product(raw_client):
-    # Token válido (assinatura correta), mas sem a claim "role" — não deve
-    # ser tratado como admin por omissão.
-    token = _make_token(role="vendedor")
     payload_without_role = {"sub": "user@plus.com", "user_id": "user-1"}
     token = jwt.encode(payload_without_role, settings.JWT_SECRET, algorithm=ALGORITHM)
 
@@ -118,78 +102,48 @@ def test_user_without_role_claim_cannot_create_product(raw_client):
 
 
 # ----------------------------------------------------------------------
-# 3. Validação cross-service de categoriaId (fail-open quando o serviço de
-#    Categorias não está configurado/disponível; bloqueante quando o
-#    serviço confirma que a categoria não existe).
+# 3. Validação de categoriaId contra dados mockados
 # ----------------------------------------------------------------------
-def test_create_product_with_categoria_id_when_service_not_configured(client):
-    """Sem CATEGORIA_SERVICE_URL configurada (padrão), a criação do produto
-    não deve ser bloqueada por causa do categoriaId — a validação é
-    simplesmente pulada (fail-open)."""
+def test_create_product_with_valid_categoria_id(client):
     response = client.post(
         "/products", json={"nome": "Vestido", "preco": 10.0, "categoriaId": "1"}
     )
     assert response.status_code == 201
 
 
-def test_create_product_blocked_when_categoria_service_confirms_not_found(client, monkeypatch):
-    monkeypatch.setattr(settings, "CATEGORIA_SERVICE_URL", "http://fake-categorias:9999")
-
-    class FakeResponse:
-        status_code = 404
-
-    def fake_get(url, headers=None, timeout=None):
-        return FakeResponse()
-
-    import app.clients.categoria_client as categoria_client_module
-    monkeypatch.setattr(categoria_client_module.httpx, "get", fake_get)
-
+def test_create_product_with_invalid_categoria_id_returns_400(client):
     response = client.post(
         "/products", json={"nome": "Vestido", "preco": 10.0, "categoriaId": "999"}
     )
     assert response.status_code == 400
 
 
-def test_create_product_allowed_when_categoria_service_confirms_exists(client, monkeypatch):
-    monkeypatch.setattr(settings, "CATEGORIA_SERVICE_URL", "http://fake-categorias:9999")
-
-    class FakeResponse:
-        status_code = 200
-
-    def fake_get(url, headers=None, timeout=None):
-        return FakeResponse()
-
-    import app.clients.categoria_client as categoria_client_module
-    monkeypatch.setattr(categoria_client_module.httpx, "get", fake_get)
-
+def test_create_product_without_categoria_id_succeeds(client):
     response = client.post(
-        "/products", json={"nome": "Vestido", "preco": 10.0, "categoriaId": "1"}
+        "/products", json={"nome": "Vestido", "preco": 10.0}
     )
     assert response.status_code == 201
 
 
-def test_create_product_fails_open_when_categoria_service_unreachable(client, monkeypatch):
-    monkeypatch.setattr(settings, "CATEGORIA_SERVICE_URL", "http://fake-categorias:9999")
-
-    import httpx as httpx_module
-
-    def fake_get(url, headers=None, timeout=None):
-        raise httpx_module.ConnectTimeout("timeout simulado")
-
-    import app.clients.categoria_client as categoria_client_module
-    monkeypatch.setattr(categoria_client_module.httpx, "get", fake_get)
-
+def test_create_product_with_valid_fornecedor_id(client):
     response = client.post(
-        "/products", json={"nome": "Vestido", "preco": 10.0, "categoriaId": "1"}
+        "/products",
+        json={
+            "nome": "Vestido",
+            "preco": 10.0,
+            "fornecedorId": "f1e2d3c4-b5a6-7890-abcd-ef1234567890",
+        },
     )
-    # Serviço indisponível -> fail-open: não bloqueia a criação do produto.
     assert response.status_code == 201
 
 
-def test_create_product_with_non_numeric_categoria_id_returns_400(client, monkeypatch):
-    monkeypatch.setattr(settings, "CATEGORIA_SERVICE_URL", "http://fake-categorias:9999")
-
+def test_create_product_with_invalid_fornecedor_id_returns_400(client):
     response = client.post(
-        "/products", json={"nome": "Vestido", "preco": 10.0, "categoriaId": "categoria-abc"}
+        "/products",
+        json={
+            "nome": "Vestido",
+            "preco": 10.0,
+            "fornecedorId": "id-que-nao-existe",
+        },
     )
     assert response.status_code == 400

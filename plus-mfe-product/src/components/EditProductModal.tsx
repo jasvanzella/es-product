@@ -6,6 +6,10 @@ import {
   IconButton,
   InputAdornment,
   Switch,
+  Select,
+  MenuItem,
+  FormControl,
+  FormHelperText,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
@@ -265,64 +269,46 @@ export function EditProductModal({
           </Box>
 
           {/* Categoria */}
-          <Box>
+          <FormControl fullWidth error={!!errors.categoriaId} variant="standard">
             <Typography sx={{ fontSize: "0.72rem", fontWeight: 600, color: errors.categoriaId ? "#ef4f6e" : "#9290a8", mb: 0.75 }}>
               Categoria
             </Typography>
-            <Box
-              component="select"
+            <Select
               value={form.categoriaId}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-                setForm((prev) => prev && { ...prev, categoriaId: e.target.value });
+              displayEmpty
+              onChange={(e) => {
+                setForm((prev) => prev && { ...prev, categoriaId: e.target.value as string });
                 setErrors((prev) => ({ ...prev, categoriaId: undefined }));
               }}
-              sx={{
-                width: "100%", fontSize: "0.9375rem", color: "#2c2a3a",
-                border: "none", borderBottom: "1.5px solid",
-                borderColor: errors.categoriaId ? "#ef4f6e" : "#e7e5f2",
-                py: 1, background: "transparent", outline: "none",
-                "&:hover": { borderColor: errors.categoriaId ? "#ef4f6e" : "#6457e8" },
-              }}
             >
-              <option value="" disabled>Selecione a categoria</option>
+              <MenuItem value="" disabled>Selecione a categoria</MenuItem>
               {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
+                <MenuItem key={c.id} value={c.id}>{c.nome}</MenuItem>
               ))}
-            </Box>
-            {errors.categoriaId && (
-              <Typography sx={{ fontSize: "0.72rem", color: "#ef4f6e", mt: 0.5 }}>{errors.categoriaId}</Typography>
-            )}
-          </Box>
+            </Select>
+            {errors.categoriaId && <FormHelperText>{errors.categoriaId}</FormHelperText>}
+          </FormControl>
 
           {/* Fornecedor */}
-          <Box>
+          <FormControl fullWidth error={!!errors.fornecedorId} variant="standard">
             <Typography sx={{ fontSize: "0.72rem", fontWeight: 600, color: errors.fornecedorId ? "#ef4f6e" : "#9290a8", mb: 0.75 }}>
               Fornecedor
             </Typography>
-            <Box
-              component="select"
+            <Select
               value={form.fornecedorId}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-                setForm((prev) => prev && { ...prev, fornecedorId: e.target.value });
+              displayEmpty
+              onChange={(e) => {
+                setForm((prev) => prev && { ...prev, fornecedorId: e.target.value as string });
                 setErrors((prev) => ({ ...prev, fornecedorId: undefined }));
               }}
-              sx={{
-                width: "100%", fontSize: "0.9375rem", color: "#2c2a3a",
-                border: "none", borderBottom: "1.5px solid",
-                borderColor: errors.fornecedorId ? "#ef4f6e" : "#e7e5f2",
-                py: 1, background: "transparent", outline: "none",
-                "&:hover": { borderColor: errors.fornecedorId ? "#ef4f6e" : "#6457e8" },
-              }}
             >
-              <option value="" disabled>Selecione o fornecedor</option>
+              <MenuItem value="" disabled>Selecione o fornecedor</MenuItem>
               {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.nome}</option>
+                <MenuItem key={s.id} value={s.id}>{s.nome}</MenuItem>
               ))}
-            </Box>
-            {errors.fornecedorId && (
-              <Typography sx={{ fontSize: "0.72rem", color: "#ef4f6e", mt: 0.5 }}>{errors.fornecedorId}</Typography>
-            )}
-          </Box>
+            </Select>
+            {errors.fornecedorId && <FormHelperText>{errors.fornecedorId}</FormHelperText>}
+          </FormControl>
 
           {/* Variações de cor */}
           <Box>

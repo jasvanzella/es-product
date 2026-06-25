@@ -8,10 +8,6 @@ esses testes rodarem direto no pipe, sem precisar de Docker.
 """
 import os
 
-# Garante que, ao importar `main` (que cria as tabelas no banco "de
-# produção" assim que o módulo é carregado), isso aconteça contra um
-# banco em memória descartável — nunca contra o products.db real ou
-# um Postgres/Ministack de verdade.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import pytest
@@ -97,8 +93,8 @@ def create_product(client, **overrides):
         "descricao": "Vestido leve de verão",
         "marca": "Plus Co",
         "preco": 149.90,
-        "categoriaId": "categoria-1",
-        "fornecedorId": "fornecedor-1",
+        "categoriaId": "1",
+        "fornecedorId": "f1e2d3c4-b5a6-7890-abcd-ef1234567890",
     }
     payload.update(overrides)
     response = client.post("/products", json=payload)

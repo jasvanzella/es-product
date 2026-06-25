@@ -1,4 +1,4 @@
-Trabalho 1 de ES2, Grupo 7
+Trabalho 2 de ES2, Grupo 7
 
 Integrantes: Jasmine Vanzella, Julia Fernandes, Luiza Rosito, Murilo Souza e Rafael Madeira
 
@@ -8,149 +8,243 @@ Integrantes: Jasmine Vanzella, Julia Fernandes, Luiza Rosito, Murilo Souza e Raf
 
 ## 2. CONTEXTO
 
-    O `plus-ms-product` é o microsserviço de domínio responsável pelo cadastro de
-    produtos, grade de tamanhos e variações de cor/SKU do sistema Plus — gestão de
-    estoque para vestuário plus size. Ele segue a mesma arquitetura distribuída
-    (Microsserviços + Microfrontends) descrita no ADR do `plus-ms-auth`, e este
-    documento complementa aquele, registrando as decisões específicas do domínio de
-    Produto: integração com autenticação/RBAC, relacionamento com os MS de
-    Categoria e Fornecedor, e tratamento de erros de integridade de dados.
+O `plus-ms-product` é o microsserviço de domínio responsável pelo cadastro de
+produtos, grade de tamanhos e variações de cor/SKU do sistema Plus Gestão —
+sistema de gestão de estoque para vestuário plus size.
+
+Ele faz parte de uma arquitetura distribuída (Microsserviços + Microfrontends)
+e integra-se com os seguintes serviços do ecossistema:
+
+- **MS Auth** (eleito na T1): emite os JWTs; o MS Produto apenas valida localmente.
+- **MS Categorias** (Grupo 5): fornece `categoriaId` para classificação de produtos.
+- **MS Fornecedores** (Grupo It Girls): fornece `fornecedorId` para rastreabilidade.
+- **MS Estoque** (Grupo 16): consome `itemDeGradeId` (variante) para controle de quantidades.
+- **MS Pedidos** (Grupo 8): consome endpoints de produto para criação de pedidos.
+- **MS Consulta** (Grupo 67): consome endpoints de busca para exibir o catálogo.
+- **MS Mídia** (Grupo 9): armazenamento de imagens de produtos (integração futura).
 
 ## 3. DECISÃO ARQUITETURAL
 
-    Mantém-se o estilo de Arquitetura em Camadas (Controllers, Services implícitos
-    nos próprios controllers para esse domínio mais simples, Models/DTOs), com
-    persistência via SQLAlchemy e exposição via FastAPI — consistente com o padrão
-    já adotado no `plus-ms-auth`.
+### 3.1. Estilo arquitetural — Clean Architecture (Hexagonal)
 
-    ### 3.1. Autenticação e Autorização (JWT/RBAC)
+O microsserviço adota uma **arquitetura em camadas** inspirada no padrão
+hexagonal, com separação clara de responsabilidades:
 
-    O MS de Produto **não emite tokens** — essa responsabilidade é exclusiva do
-    `plus-ms-auth`. Para validar os tokens recebidos, o MS de Produto **replica
-    localmente** a lógica de verificação de JWT (`app/config/security.py`):
-    decodifica o token com o mesmo algoritmo (HS256) e o mesmo segredo
-    compartilhado (`JWT_SECRET`) configurados no `plus-ms-auth`.
+```
+Controllers (adapters de entrada — HTTP/FastAPI)
+    ↓ delega para
+Services (camada de aplicação — use cases e regras de negócio)
+    ↓ delega para
+Repositories (adapters de saída — acesso a dados via SQLAlchemy)
+    ↓ opera sobre
+Models (entidades de infraestrutura — mapeamento ORM)
+```
 
-    Essa é a mesma estratégia já adotada pelo `plus-ms-categorias` (implementado em
-    Java/Spring, com seu próprio `HmacSha256JwtDecoder`): cada microsserviço de
-    recurso valida o JWT de forma **stateless**, sem precisar fazer uma chamada de
-    rede ao MS de Auth a cada requisição.
+**Estrutura de diretórios:**
+```
+src/app/
+├── config/           Settings e segurança JWT
+├── database/         Engine e sessão SQLAlchemy
+├── models/           ProductModel, VariantModel, SizeModel
+├── dtos/             Request/Response Pydantic (product, variant, size)
+├── repositories/     ProductRepository, VariantRepository, SizeRepository
+├── services/         ProductService, VariantService, SizeService
+├── clients/          CategoriaClient, SupplierClient (HTTP cross-service)
+└── controllers/      ProductController, VariantController, SizeController
+```
 
-    RBAC: leitura (`GET`) é permitida a qualquer usuário autenticado
-    (`admin` ou `vendedor`); mutações (`POST`, `PUT`, `PATCH`) em produtos,
-    variantes e tamanhos são restritas ao papel `admin` — espelhando exatamente a
-    regra já aplicada no `plus-ms-categorias`
-    (`hasRole('ADMIN')` para `POST`/`PUT`/`PATCH`/`DELETE`).
+Cada camada possui uma responsabilidade única:
+- **Controllers**: recebem requisições HTTP, validam auth/RBAC, delegam ao service.
+- **Services**: orquestram regras de negócio (validação de SKU, cascade disable,
+  criação atômica de produto+variantes, validação cross-service).
+- **Repositories**: encapsulam queries SQL/ORM, abstraindo o acesso ao banco.
+- **Models**: mapeamento ORM puro, sem lógica de negócio.
+- **DTOs**: contratos de entrada/saída (Pydantic), separados dos models.
+- **Clients**: adaptadores HTTP para comunicação com outros microsserviços.
 
-    ### 3.2. Relacionamento com Categoria
+### 3.2. Autenticação e Autorização (JWT/RBAC)
 
-    Um Produto referencia **uma única** categoria (`categoriaId`), não uma lista.
-    Essa decisão decorre diretamente do modelo de domínio do `plus-ms-categorias`:
-    lá, `Categoria` é uma estrutura em **árvore** (`categoriaPaiId` aponta para uma
-    única categoria-pai). Permitir que um produto referencie múltiplas categorias
-    quebraria essa hierarquia (a noção de "categoria mais específica" deixaria de
-    existir) e duplicaria, no MS de Produto, uma responsabilidade de modelagem que
-    já pertence ao MS de Categorias. Se for necessário, no futuro, listar produtos
-    por uma categoria "ampla" (ex.: "Vestidos" abrangendo "Vestidos Longos" e
-    "Vestidos Curtos"), isso deve ser resolvido percorrendo a árvore de categorias
-    no `plus-ms-categorias` (via `categoriaPaiId`), e não com uma relação N:N no
-    Produto.
+O MS de Produto **não emite tokens** — essa responsabilidade é exclusiva do
+MS Auth. Para validar os tokens recebidos, o MS de Produto **replica
+localmente** a lógica de verificação de JWT (`app/config/security.py`):
+decodifica o token com o mesmo algoritmo (HS256) e o mesmo segredo
+compartilhado (`JWT_SECRET`) configurados no MS Auth.
 
-    A validação cross-service do `categoriaId` é feita de forma síncrona, via HTTP
-    (`app/clients/categoria_client.py`), no momento da criação/atualização do
-    produto, repassando o JWT do usuário autenticado (token relay) para a chamada
-    `GET /categorias/{id}` do `plus-ms-categorias` — já que essa rota também exige
-    autenticação. Essa validação é **fail-open**: se o serviço de Categorias não
-    estiver configurado ou não responder a tempo, o produto é criado/atualizado
-    normalmente (ver trade-offs, seção 6.2). A validação só **bloqueia** a operação
-    quando o serviço de Categorias confirma (HTTP 404) que a categoria não existe.
+Essa é a mesma estratégia adotada pelo MS Categorias (Grupo 5, Java/Spring,
+`HmacSha256JwtDecoder`): cada microsserviço valida o JWT de forma
+**stateless**, sem chamada de rede ao MS Auth.
 
-    ### 3.3. Relacionamento com Fornecedor
+**RBAC:**
+- Leitura (`GET`): qualquer usuário autenticado (`admin` ou `vendedor`).
+- Mutações (`POST`, `PUT`, `PATCH`): restrito ao papel `admin`.
 
-    O `fornecedorId` é armazenado, mas **não é validado** cross-service nesta
-    entrega: não há, até o momento, um microsserviço de Fornecedor disponível no
-    ecossistema Plus. Essa é uma limitação conhecida e documentada (seção 6.2),
-    não um descuido — assim que o MS de Fornecedor existir, a mesma estratégia
-    usada para `categoriaId` (cliente HTTP com fail-open) pode ser replicada.
+### 3.3. Integração com MS Categorias (Grupo 5)
 
-    ### 3.4. Consistência na criação de variantes aninhadas
+O MS Categorias usa **IDs numéricos** (Long, auto-incremento). Um produto
+referencia uma única categoria via `categoriaId`.
 
-    A criação de um produto já com variantes (`POST /products` com o campo
-    `variantes`) aplica exatamente as mesmas validações da rota dedicada
-    (`POST /products/{id}/variants`): o `tamanhoId` de cada variante precisa
-    existir, e o `sku` não pode colidir com nenhuma variante já cadastrada — nem
-    com outra variante dentro do mesmo payload. Isso evita que a criação aninhada
-    seja uma forma de contornar as regras de negócio aplicadas na rota dedicada.
+A validação cross-service é feita via HTTP (`app/clients/categoria_client.py`),
+chamando `GET /categorias/{id}` no MS Categorias, repassando o JWT do usuário
+(token relay). A validação é **fail-open**: se o serviço estiver indisponível,
+o produto é criado normalmente. A validação só bloqueia quando o MS Categorias
+confirma (HTTP 404) que a categoria não existe.
 
-    ### 3.5. Tratamento de erros de integridade
+Formato do ID é validado localmente (`int(categoriaId)`) antes da chamada HTTP —
+IDs não-numéricos são rejeitados imediatamente com 400.
 
-    Toda escrita no banco (`db.commit()`) é protegida contra `IntegrityError`
-    (ex.: SKU duplicado por uma corrida entre requisições concorrentes, que passe
-    pelas validações manuais mas colida no commit). Os pontos de escrita mais
-    sensíveis tratam o erro localmente, convertendo para `409 Conflict` com uma
-    mensagem amigável. Como rede de segurança adicional, `main.py` registra um
-    `exception_handler` global para `IntegrityError`, garantindo que nenhum erro
-    desse tipo escape como um `500` genérico, mesmo que apareça em um ponto do
-    código ainda não coberto por um tratamento específico.
+### 3.4. Integração com MS Fornecedores (Grupo It Girls)
+
+O MS Fornecedores usa **UUIDs**. A validação cross-service segue o mesmo
+padrão fail-open do MS Categorias (`app/clients/supplier_client.py`),
+chamando `GET /suppliers/{id}`.
+
+### 3.5. Modelo de domínio — Produtos, Variantes e Tamanhos
+
+O domínio é composto por três entidades:
+
+- **Product**: dados do produto (nome, descrição, marca, preço, categoriaId,
+  fornecedorId, ativo).
+- **Size**: cadastro de tamanhos disponíveis (P, M, G, GG, XGG, etc.).
+- **Variant** (Item de Grade): combinação de produto + tamanho + cor + SKU único.
+  Cada variante representa um item específico do estoque.
+
+Relacionamentos:
+- Product 1:N Variant (um produto pode ter múltiplas variantes).
+- Size 1:N Variant (um tamanho pode ser usado em múltiplas variantes).
+- Variant tem SKU unique (identificador único global).
+
+### 3.6. Criação atômica de produto com variantes
+
+`POST /products` aceita um campo opcional `variantes` que cria as variantes
+na mesma transação. As validações são idênticas à rota dedicada
+(`POST /products/{id}/variants`): tamanhoId existente, SKU único (inclusive
+dentro do mesmo payload). Se qualquer validação falhar, a transação inteira
+é revertida — nenhum produto nem variante é persistido.
+
+### 3.7. Cascade disable (soft delete)
+
+Ao desativar um produto (`PATCH /products/{id}/disable`), todas as suas
+variantes são desativadas automaticamente na mesma transação. Isso garante
+consistência: um produto inativo não pode ter variantes ativas.
+
+### 3.8. Tratamento de erros de integridade
+
+Toda escrita no banco é protegida contra `IntegrityError` (ex.: SKU duplicado
+por corrida entre requisições concorrentes). Os services tratam o erro
+localmente, convertendo para `409 Conflict`. Como rede de segurança,
+`main.py` registra um `exception_handler` global para `IntegrityError`.
 
 ## 4. FLUXO GERAL
 
-    O Shell/MFE envia o JWT obtido do `plus-ms-auth` (`POST /auth/login`) no header
-    `Authorization: Bearer <token>` de toda requisição ao MS de Produto. O MS de
-    Produto valida a assinatura/expiração do token localmente
-    (`app/config/security.py`) e checa o papel (`role`) da claim do JWT para
-    decidir se a operação é permitida (RBAC). Ao criar/atualizar um produto com
-    `categoriaId`, o MS de Produto repassa esse mesmo token em uma chamada
-    `GET /categorias/{id}` ao `plus-ms-categorias`, para confirmar que a categoria
-    existe antes de persistir a referência.
+```
+MFE Product (porta 4002)
+    → [JWT no header Authorization]
+    → MS Product (porta 3002)
+        → valida JWT localmente (HS256 + JWT_SECRET compartilhado)
+        → checa RBAC (admin para escrita)
+        → [se categoriaId presente] → GET /categorias/{id} no MS Categorias (porta 3004)
+        → [se fornecedorId presente] → GET /suppliers/{id} no MS Fornecedores (porta 3003)
+        → persiste no PostgreSQL (banco plus_product)
+        → retorna resposta ao MFE
+```
 
 ## 5. TECNOLOGIAS ADOTADAS
 
-    - Python 3.12 + FastAPI
-    - SQLAlchemy (PostgreSQL em produção; SQLite em desenvolvimento isolado/testes)
-    - python-jose (decodificação de JWT, mesma biblioteca usada no `plus-ms-auth`)
-    - httpx (cliente HTTP para a validação cross-service de `categoriaId`)
-    - Docker
-    - Pytest (testes unitários em memória + testes funcionais contra o container real)
+| Camada | Tecnologia |
+|--------|-----------|
+| Linguagem | Python 3.12 |
+| Framework web | FastAPI |
+| ORM | SQLAlchemy |
+| Banco (prod) | PostgreSQL 15 (via Ministack/RDS) |
+| Banco (dev/test) | SQLite em memória |
+| JWT | python-jose (HS256) |
+| HTTP client | httpx (validação cross-service) |
+| Validação | Pydantic v2 |
+| Testes | Pytest (46 testes unitários) |
+| Container | Docker |
+| CI/CD | GitHub Actions |
+| MFE | React 18 + TypeScript + MUI 9 + Vite 5 + Module Federation |
 
-## 6. TRADE-OFFS
+## 6. ENDPOINTS (RESUMO)
 
-### 6.1. VANTAGENS
+### Produtos (`/products`)
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/products` | admin | Criar produto (com variantes opcionais) |
+| GET | `/products` | auth | Listar produtos paginado |
+| GET | `/products/search` | auth | Buscar com filtros (nome, cor, tamanho, preço, categoria, fornecedor) |
+| GET | `/products/{id}` | auth | Detalhe com variantes aninhadas |
+| PUT | `/products/{id}` | admin | Atualizar produto |
+| PATCH | `/products/{id}/disable` | admin | Desativar (cascade para variantes) |
 
-    - Validação de JWT stateless: nenhuma chamada de rede ao MS de Auth é
-      necessária para autenticar uma requisição, reduzindo latência e evitando que
-      uma indisponibilidade do MS de Auth derrube os demais serviços que já têm
-      usuários com tokens válidos em mãos.
+### Variantes (`/variants`)
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/products/{id}/variants` | admin | Criar variante |
+| GET | `/products/{id}/variants` | auth | Listar variantes do produto |
+| GET | `/variants/{id}` | auth | Buscar variante por ID |
+| PUT | `/variants/{id}` | admin | Atualizar variante |
+| PATCH | `/variants/{id}/disable` | admin | Desativar variante |
 
-    - RBAC consistente entre serviços: a mesma regra (`admin` escreve, qualquer
-      autenticado lê) é aplicada da mesma forma no MS de Produto e no MS de
-      Categorias, facilitando o raciocínio sobre permissões em todo o sistema.
+### Tamanhos (`/sizes`)
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/sizes` | admin | Criar tamanho |
+| GET | `/sizes` | auth | Listar tamanhos |
+| GET | `/sizes/{id}` | auth | Buscar tamanho |
+| PUT | `/sizes/{id}` | admin | Atualizar tamanho |
+| PATCH | `/sizes/{id}/disable` | admin | Desativar tamanho |
 
-    - Acoplamento fraco e deliberado com Categoria/Fornecedor: o MS de Produto não
-      mantém uma foreign key física para outros bancos de dados, preservando a
-      independência de deploy/escala de cada serviço.
+## 7. TRADE-OFFS
 
-### 6.2. DESVANTAGENS/RISCOS
+### 7.1. VANTAGENS
 
-    - Duplicação de segredo e lógica de verificação de JWT: o `JWT_SECRET` e o
-      código de decodificação/validação existem tanto no `plus-ms-auth` quanto no
-      `plus-ms-product` (e, em Java, no `plus-ms-categorias`). Isso é uma escolha
-      consciente (evita uma chamada de rede por requisição autenticada), mas exige
-      governança: se o segredo rotar, **todos** os serviços precisam ser
-      atualizados juntos, e qualquer mudança na lógica de validação (ex.: novos
-      claims, novo algoritmo) precisa ser replicada manualmente em cada serviço.
+- **Clean Architecture**: separação clara entre regras de negócio (services),
+  acesso a dados (repositories) e interface HTTP (controllers). Facilita
+  testes unitários e manutenção.
 
-    - Validação cross-service fail-open: se o `plus-ms-categorias` estiver fora do
-      ar, é possível criar um produto com um `categoriaId` que mais tarde se
-      revele inválido. Optamos por isso para não acoplar a disponibilidade do MS
-      de Produto à do MS de Categorias, mas isso significa que a consistência
-      entre os dois é **eventual**, não imediata — pode haver, temporariamente,
-      produtos com referências "pendentes de confirmação".
+- **Validação de JWT stateless**: nenhuma chamada de rede ao MS Auth por
+  requisição, reduzindo latência e evitando acoplamento de disponibilidade.
 
-    - Nenhuma validação para `fornecedorId`: como não existe um MS de Fornecedor
-      no ecossistema atual, qualquer valor é aceito para esse campo. Isso é uma
-      lacuna conhecida, não uma decisão definitiva.
+- **RBAC consistente**: mesma regra (`admin` escreve, qualquer autenticado lê)
+  aplicada no MS Produto, MS Categorias e MS Fornecedores.
 
-    - Sem mecanismo de invalidação/expiração centralizada: como em qualquer
-      esquema de JWT stateless puro, um token comprometido continua válido até
-      expirar — não há, hoje, uma blacklist compartilhada entre os serviços.
+- **Acoplamento fraco com outros serviços**: sem foreign keys físicas entre
+  bancos. A validação cross-service é fail-open, preservando a
+  independência de deploy de cada serviço.
+
+- **Criação atômica de produto+variantes**: transação única garante que o
+  produto e suas variantes sejam criados ou revertidos juntos.
+
+### 7.2. DESVANTAGENS/RISCOS
+
+- **Duplicação de segredo JWT**: o `JWT_SECRET` existe em todos os
+  microsserviços. Rotação do segredo exige atualização coordenada.
+
+- **Validação cross-service fail-open**: se o MS Categorias estiver fora do
+  ar, é possível criar produtos com `categoriaId` inválido. A consistência
+  entre serviços é eventual, não imediata.
+
+- **Sem invalidação centralizada de tokens**: tokens comprometidos continuam
+  válidos até expirar — não há blacklist compartilhada.
+
+## 8. MAPEAMENTO DE SERVIÇOS
+
+| Microsserviço | Responsabilidade | Relação com Produto |
+|--------------|-----------------|---------------------|
+| MS Auth | Emite JWT, gerencia usuários | Produto valida JWT localmente |
+| MS Categorias (Grupo 5) | CRUD de categorias hierárquicas | Produto valida categoriaId via HTTP |
+| MS Fornecedores (It Girls) | CRUD de fornecedores | Produto valida fornecedorId via HTTP |
+| MS Estoque (Grupo 16) | Controle de entradas/saídas | Consome variantes (itemDeGradeId) |
+| MS Pedidos (Grupo 8) | Pedidos de venda | Consome produtos e variantes |
+| MS Consulta (Grupo 67) | Busca rápida para vendedores | Consome endpoints de busca |
+| MS Mídia (Grupo 9) | Imagens de produtos | Integração futura |
+| MS Alertas (Grupo 12) | Alertas de estoque baixo | Consome dados via MS Estoque |
+| MS Relatórios (Grupo 23) | Analytics de vendas | Consome dados de múltiplos serviços |
+
+## 9. HISTÓRICO DE REVISÕES
+
+| Data | Autor | Descrição |
+|------|-------|-----------|
+| 2026-05-13 | Grupo 7 | Versão inicial (T1) — CRUD básico de produtos |
+| 2026-06-24 | Grupo 7 | T2 — Clean Architecture, variantes, tamanhos, integrações cross-service |

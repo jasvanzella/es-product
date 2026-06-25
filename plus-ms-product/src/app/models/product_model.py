@@ -1,7 +1,8 @@
 import uuid
-from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Integer, DateTime, func
+from sqlalchemy import Column, String, Float, Boolean, DateTime, func
 from sqlalchemy.orm import relationship
 from app.database.connection import Base
+
 
 class ProductModel(Base):
     __tablename__ = "products"
@@ -16,6 +17,8 @@ class ProductModel(Base):
     ativo = Column(Boolean, default=True)
     criado_em = Column(DateTime, server_default=func.now())
     atualizado_em = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    variantes = relationship("VariantModel", back_populates="produto", lazy="selectin")
 
 
 

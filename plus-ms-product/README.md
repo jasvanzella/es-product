@@ -1,84 +1,144 @@
+Trabalho 2 de ES2, Grupo 7
+
+Integrantes: Jasmine Vanzella, Julia Fernandes, Luiza Rosito, Murilo Souza e Rafael Madeira
+
 # plus-ms-product
- 
-Microsserviço de domínio **Produto** do sistema Plus — Gestão de Estoque para Loja de Roupas Plus Size.
- 
-Responsável por: cadastro de produtos, tabelas de medidas, variações de cor/SKU e grade de tamanhos.
- 
-# Manual de Execução
- 
-## Configuração
- 
-### Pré-requisitos
- 
-| Ferramenta | Versão mínima | Instalação |
+
+Microsserviço de domínio **Produto** do sistema Plus Gestão — gestão de estoque para loja de roupas plus size.
+
+Responsável pelo cadastro de produtos, grade de tamanhos, variações de cor/SKU e integração com os serviços de Categorias e Fornecedores.
+
+## Arquitetura
+
+O serviço segue **Clean Architecture** (inspirada no padrão hexagonal), com separação em camadas:
+
+```
+Controllers (HTTP/FastAPI)  →  Services (regras de negócio)  →  Repositories (acesso a dados)
+```
+
+Estrutura de diretórios:
+```
+src/app/
+├── config/           Settings e segurança JWT/RBAC
+├── database/         Engine e sessão SQLAlchemy
+├── models/           ProductModel, VariantModel, SizeModel
+├── dtos/             Request/Response (Pydantic)
+├── repositories/     ProductRepository, VariantRepository, SizeRepository
+├── services/         ProductService, VariantService, SizeService
+├── clients/          CategoriaClient, SupplierClient (HTTP cross-service)
+└── controllers/      ProductController, VariantController, SizeController
+```
+
+## Tecnologias
+
+| Tecnologia | Uso |
+|---|---|
+| Python 3.12 | Linguagem |
+| FastAPI | Framework web |
+| SQLAlchemy | ORM |
+| PostgreSQL 15 | Banco de dados (produção) |
+| SQLite | Banco de dados (dev/testes) |
+| python-jose | Validação JWT (HS256) |
+| httpx | Cliente HTTP cross-service |
+| Pydantic v2 | Validação de dados |
+| Pytest | Testes (46 testes unitários) |
+| Docker | Containerização |
+| GitHub Actions | CI/CD |
+
+## Integrações Cross-Service
+
+| Serviço | Endpoint consumido | Padrão |
 |---|---|---|
-| Python | 3.10+ | https://www.python.org/downloads/ |
-| Docker | 24+ | https://docs.docker.com/get-docker/ |
-| Git | --- | https://git-scm.com/install/ |
- 
-### Clonagem
- 
+| MS Auth | — (JWT validado localmente) | Stateless, segredo compartilhado |
+| MS Categorias (Grupo 5) | `GET /categorias/{id}` | Fail-open, IDs numéricos |
+| MS Fornecedores (It Girls) | `GET /suppliers/{id}` | Fail-open, IDs UUID |
+
+## Endpoints
+
+### Produtos (`/products`)
+
+| Método | Rota | Auth | Descrição |
+|---|---|---|---|
+| POST | `/products` | admin | Criar produto (com variantes opcionais) |
+| GET | `/products` | auth | Listar produtos (paginado) |
+| GET | `/products/search` | auth | Buscar com filtros (nome, cor, tamanho, preço, categoria, fornecedor, marca) |
+| GET | `/products/{id}` | auth | Detalhe do produto com variantes aninhadas |
+| PUT | `/products/{id}` | admin | Atualizar produto |
+| PATCH | `/products/{id}/disable` | admin | Desativar produto (cascade para variantes) |
+
+### Variantes (`/variants`)
+
+| Método | Rota | Auth | Descrição |
+|---|---|---|---|
+| POST | `/products/{id}/variants` | admin | Criar variante (cor + tamanho + SKU) |
+| GET | `/products/{id}/variants` | auth | Listar variantes de um produto |
+| GET | `/variants/{id}` | auth | Buscar variante por ID |
+| PUT | `/variants/{id}` | admin | Atualizar variante |
+| PATCH | `/variants/{id}/disable` | admin | Desativar variante |
+
+### Tamanhos (`/sizes`)
+
+| Método | Rota | Auth | Descrição |
+|---|---|---|---|
+| POST | `/sizes` | admin | Criar tamanho |
+| GET | `/sizes` | auth | Listar tamanhos |
+| GET | `/sizes/{id}` | auth | Buscar tamanho por ID |
+| PUT | `/sizes/{id}` | admin | Atualizar tamanho |
+| PATCH | `/sizes/{id}/disable` | admin | Desativar tamanho |
+
+A documentação completa (parâmetros, exemplos, respostas) está no Swagger (`/docs`) e no arquivo `openapi.yaml`.
+
+## Execução
+
+### Pré-requisitos
+
+| Ferramenta | Versão mínima |
+|---|---|
+| Python | 3.10+ |
+| Docker | 24+ |
+| Git | — |
+
+### Opção A — Isolado (desenvolvimento)
+
+Usa SQLite local, sem Docker.
+
 ```bash
 git clone <url-deste-repositorio>
 cd plus-ms-product
-```
- 
-## Execução
- 
-Existem duas formas de rodar este serviço: **isolado** (rápido, ideal para desenvolvimento e para testar a API sozinha) ou **integrado** (com Ministack, MS Auth e Shell, simulando o ambiente real).
- 
----
- 
-### Opção A — Isolado (recomendado para desenvolvimento)
- 
-Usa um banco SQLite local, sem necessidade de Docker nem de outros serviços no ar.
- 
-1. Criar e ativar o ambiente virtual:
-```bash
 python -m venv venv
 ```
- 
-- Windows:
+
+Ativar o venv:
 ```powershell
+# Windows
 .\venv\Scripts\activate
 ```
-- Linux/Mac:
 ```bash
+# Linux/Mac
 source venv/bin/activate
 ```
- 
-2. Instalar as dependências:
+
+Instalar e rodar:
 ```bash
 pip install -r requirements.txt
-```
-> Se o `pip` não for reconhecido, tente `python -m pip install -r requirements.txt`.
- 
-3. Rodar a API:
-```bash
 cd src
-uvicorn main:app --reload
+uvicorn main:app --reload --port 3002
 ```
-> Se o `uvicorn` não for reconhecido, tente `python -m uvicorn main:app --reload`.
- 
-4. Acessar:
+
 | Recurso | URL |
 |---|---|
-| API (raiz) | http://localhost:8000/ |
-| Swagger (documentação interativa) | http://localhost:8000/docs |
-| Redoc (documentação alternativa) | http://localhost:8000/redoc |
- 
-> Por padrão o Uvicorn sobe na porta `8000`. Para rodar na porta oficial do serviço (`3002`, igual ao ambiente integrado), use `uvicorn main:app --reload --port 3002`.
+| API (raiz) | http://localhost:3002/ |
+| Swagger | http://localhost:3002/docs |
+| Redoc | http://localhost:3002/redoc |
 
-> **Autenticação:** todas as rotas (exceto a raiz `/`) exigem um JWT válido no header `Authorization: Bearer <token>`, com o mesmo `JWT_SECRET` usado pelo `plus-ms-auth` (por padrão, `dev-secret`). No modo isolado, sem o MS Auth no ar, gere um token de teste manualmente (ex.: com `python-jose`, usando o mesmo segredo) para testar as rotas pelo Swagger.
- 
----
- 
-### Opção B — Integrado (Ministack + MS Auth + Shell)
- 
-Sobe o ecossistema completo via Docker Compose, a partir do repositório `plus-infra` (compartilhado entre todos os microsserviços do projeto).
- 
-1. Clone, no mesmo nível de pasta deste repositório, o `plus-infra`, o `plus-ms-auth`, o `plus-mfe-auth` e o `plus-shell` (veja o README do `plus-ms-auth` para os links).
-2. Dentro de `plus-infra`, crie um arquivo `.env` com:
+> **Auth:** todas as rotas exigem JWT com `JWT_SECRET=dev-secret`. Sem o MS Auth, gere um token manualmente com `python-jose` (algoritmo HS256, claims: `sub`, `user_id`, `role`).
+
+### Opção B — Integrado (Ministack)
+
+Sobe o ecossistema via Docker Compose a partir do `plus-infra`.
+
+1. Clone `plus-infra`, `plus-ms-auth`, `plus-mfe-auth` e `plus-shell` no mesmo nível.
+2. Configure o `.env` no `plus-infra`:
 ```
 DB_HOST=ministack-rds-plus-auth-db
 DB_PORT=5432
@@ -91,65 +151,39 @@ MS_PRODUCT_PORT=3002
 SHELL_PORT=3000
 MFE_AUTH_PORT=4001
 ```
-> `JWT_SECRET` precisa ser **idêntico** ao configurado no `plus-ms-auth` (e no `plus-ms-categorias`), já que os tokens são validados localmente em cada serviço (ver ADR.md).
->
-> Opcionalmente, defina `CATEGORIA_SERVICE_URL` (ex.: `http://plus-ms-categorias:3002`) para habilitar a validação cross-service do `categoriaId` ao criar/atualizar produtos. Sem essa variável, a validação é simplesmente pulada (ver ADR.md, seção 6.2).
- 
-3. Subir os containers:
+
+3. Subir:
 ```bash
+cd plus-infra
 docker compose up -d --build
 ```
- 
+
 4. Acessar:
-| Serviço | URL local |
+
+| Serviço | URL |
 |---|---|
 | plus-shell | http://localhost:3000 |
 | plus-ms-auth | http://localhost:3001 |
 | **plus-ms-product** | **http://localhost:3002** |
-| **Swagger do plus-ms-product** | **http://localhost:3002/docs** |
+| **Swagger** | **http://localhost:3002/docs** |
 | plus-mfe-auth | http://localhost:4001 |
-| Ministack | http://localhost:4566 |
- 
-5. Para parar:
-```bash
-docker compose down
-```
- 
+| plus-mfe-product | http://localhost:4002 |
+
 ## Testes
- 
-### Testes unitários
-Rodam em memória, sem necessidade de Docker.
- 
+
+### Unitários (sem Docker)
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest
 ```
- 
-### Testes funcionais
-Builda e sobe o container real, e testa via HTTP. Necessita de Docker em execução.
- 
+
+### Funcionais (com Docker)
 ```bash
 python -m pytest -c pytest-functional.ini
 ```
- 
+
 ## CI/CD
- 
-O pipeline (GitHub Actions, em `.github/workflows/`) roda automaticamente a cada push/PR para a `main`:
-- `test.yaml`: executa os testes unitários e funcionais.
-- `build.yaml`: builda a imagem Docker e publica no Docker Hub.
-## Principais rotas
- 
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/products` | Cria um produto (com variantes opcionais) |
-| GET | `/products` | Lista produtos (paginado) |
-| GET | `/products/search` | Busca produtos por filtros (nome, preço, cor, tamanho...) |
-| GET | `/products/{id}` | Detalhe do produto, com variantes |
-| PUT | `/products/{id}` | Atualiza um produto |
-| PATCH | `/products/{id}/disable` | Desativa um produto (soft delete em cascata) |
-| POST | `/products/{id}/variants` | Cria uma variante (cor/SKU) para o produto |
-| GET | `/products/{id}/variants` | Lista variantes de um produto |
-| GET, PUT, PATCH | `/variants/{id}` | Detalhe, atualização e desativação de uma variante |
-| POST, GET, PUT, PATCH | `/sizes` | CRUD de tamanhos (grade) |
- 
-A documentação completa de cada rota (parâmetros, exemplos, respostas) está disponível no Swagger (`/docs`).
+
+Pipeline GitHub Actions (`.github/workflows/ci.yml`):
+- **test**: roda testes unitários a cada push/PR na `main`
+- **build-and-push**: builda imagem Docker e publica no Docker Hub (somente na `main`)
