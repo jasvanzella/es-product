@@ -44,7 +44,7 @@ jobs:
         run: npm ci
 
       - name: Set unique version
-        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version
+        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version 
 
       - name: Build
         run: npm run build
